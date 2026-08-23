@@ -232,14 +232,18 @@ local function sStats(pld)
     end
 end
 
-if _G_KEY:find("XXXX") then return end
+if _G_KEY:find("XXXX") then
+    warn("[Emorima TrackStats] Invalid Key! Aborting.")
+    return
+end
 if not lplr.Character then lplr.CharacterAdded:Wait() end
 task.wait(3)
 
-print("[Emorima] TrackStats Initialized! Fetching data every " .. _G_DELAY .. "s...")
+print("[Emorima] TrackStats Initialized! Fetching data every " .. _G_DELAY .. "s... Key: " .. _G_KEY)
 task.spawn(function()
     while true do
-        pcall(function() sStats(cStats()) end)
+        local s, err = pcall(function() sStats(cStats()) end)
+        if not s then print("[Emorima TrackStats] Collection Error: " .. tostring(err)) end
         task.wait(_G_DELAY)
     end
 end)
