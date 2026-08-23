@@ -178,15 +178,22 @@ end
 local function sStats(pld)
     local b = HS:JSONEncode({secret_key = _G_KEY, stats = pld, timestamp = os.time()})
     local u = _G_API .. "/api/api_trackstats"
-    pcall(function()
-        HS:RequestAsync({Url = u, Method = "POST", Headers = {["Content-Type"] = "application/json", ["Authorization"] = "Bearer " .. _G_ANON}, Body = b})
-    end)
+    local req = (type(syn) == "table" and syn.request) or (type(http) == "table" and http.request) or (type(fluxus) == "table" and fluxus.request) or http_request or request
+    if req then
+        local s, e = pcall(function()
+            req({Url = u, Method = "POST", Headers = {["Content-Type"] = "application/json", ["Authorization"] = "Bearer " .. _G_ANON}, Body = b})
+        end)
+        if not s then print("[Emorima TrackStats] Request Error: " .. tostring(e)) end
+    else
+        warn("[Emorima TrackStats] Your executor does not support HTTP requests!")
+    end
 end
 
 if _G_KEY:find("XXXX") then return end
 if not lplr.Character then lplr.CharacterAdded:Wait() end
 task.wait(3)
 
+print("[Emorima] TrackStats Initialized! Fetching data every " .. _G_DELAY .. "s...")
 task.spawn(function()
     while true do
         pcall(function() sStats(cStats()) end)
