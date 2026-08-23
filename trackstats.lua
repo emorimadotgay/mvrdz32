@@ -78,26 +78,17 @@ local function gMelee()
     return sc(lplr.Character) or sc(lplr:FindFirstChild("Backpack")) or ""
 end
 
-local IRS = sget(function() return RS:WaitForChild("ItemReplicationService", 10) end)
-local IRM = IRS and sget(function() return require(IRS) end)
-local IRK = IRS and sget(function() return require(IRS.KEYS) end)
-local ICM = sget(function() local ic = RS:WaitForChild("ItemConfig", 10); return ic and require(ic) end)
-
 local function gInv()
     local itms = {}
-    if not IRM or not IRK then return itms end
-    local to = tick() + 5
-    while IRM.IsInitialized ~= true and tick() < to do task.wait() end
-    local s, q = pcall(function() return IRM:GetItems(IRK.QUANTITY) end)
-    if s and q then
-        for _, i in pairs(q) do
-            if i.Value and i.Value > 0 then
-                local id = tostring(i.ItemId or "")
-                local lbl = ""
-                if ICM then
-                    pcall(function() lbl = ICM.match(i.ItemId):unwrap().Index.DebugLabel or "" end)
-                end
-                table.insert(itms, {id = id, lbl = lbl, v = i.Value})
+    local r = RS:FindFirstChild("Remotes")
+    if not r then return itms end
+    local c = r:FindFirstChild("CommF_")
+    if not c then return itms end
+    local s, v = pcall(function() return c:InvokeServer("getInventory") end)
+    if s and type(v) == "table" then
+        for _, i in ipairs(v) do
+            if type(i) == "table" and i.Name then
+                table.insert(itms, {id = tostring(i.Name), lbl = tostring(i.Name), v = 1})
             end
         end
     end
