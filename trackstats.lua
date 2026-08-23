@@ -78,29 +78,80 @@ local function gMelee()
     return sc(lplr.Character) or sc(lplr:FindFirstChild("Backpack")) or ""
 end
 
-local function gInv()
-    local itms = {}
-    local r = RS:FindFirstChild("Remotes")
-    if not r then return itms end
-    local c = r:FindFirstChild("CommF_")
-    if not c then return itms end
-    local s, v = pcall(function() return c:InvokeServer("getInventory") end)
-    if s and type(v) == "table" then
-        for _, i in ipairs(v) do
-            if type(i) == "table" and i.Name then
-                table.insert(itms, {id = tostring(i.Name), lbl = tostring(i.Name), v = 1})
-            end
-        end
+local function cleanFruitName(raw)
+    if not raw or raw == "" then return "None" end
+    local name = tostring(raw):gsub("%s*[Pp]hysical%s*", ""):gsub("%s*Fruit%s*", ""):gsub("%s*fruit%s*", "")
+    local p1, p2 = name:match("^([%w%s]+)%-(%w+)$")
+    if p1 and p2 and p1:lower() == p2:lower() then return p1 end
+    if name:find("%-") then
+        local parts = string.split(name, "-")
+        if #parts >= 2 and parts[1]:lower() == parts[2]:lower() then return parts[1] end
     end
-    return itms
+    return name
 end
 
-local function hF(inv, tid)
-    local tg = tid:lower()
-    for _, i in ipairs(inv) do
-        local id = (i.id or ""):lower()
-        local lbl = (i.lbl or ""):lower()
-        if id == tg or id:find(tg, 1, true) or lbl:find(tg, 1, true) then return true end
+local function gInvAdvanced()
+    local fruits, swords, guns, materials, accessories = {}, {}, {}, {}, {}
+    local fruitMap = {}
+    
+    pcall(function()
+        -- FIX: Use getrenv().require to prevent executor from breaking game scripts with RobloxScript context errors
+        local gameReq = (getrenv and getrenv().require) or require
+        local ItemReplicationService = gameReq(RS:WaitForChild("ItemReplicationService", 3))
+        local KEYS = gameReq(RS.ItemReplicationService:WaitForChild("KEYS", 3))
+        local ItemConfig = gameReq(RS:WaitForChild("ItemConfig", 3))
+
+        local getItems = ItemReplicationService.GetItems
+        local a, b = debug.getupvalue(getItems, 2)
+        local cacheTable = (type(a) == "table" and a) or (type(b) == "table" and b)
+        local userCache = cacheTable and cacheTable[lplr.UserId]
+        local items = userCache and userCache:GetItems(KEYS.QUANTITY)
+
+        if items then
+            for _, v in pairs(items) do
+                if v.Value and v.Value > 0 then
+                    pcall(function()
+                        local matchRes = ItemConfig.match(v.ItemId)
+                        if matchRes and matchRes.unwrap then
+                            local info = matchRes:unwrap()
+                            local rawName = tostring((info.Index and info.Index.StorageKey) or "")
+                            local displayName = tostring((info.Display and info.Display.Name) or rawName)
+                            local category = tostring((info.Display and info.Display.Category) or "")
+                            local idType = tostring((info.Index and info.Index.IdType) or "")
+                            local storageMethod = tostring((info.State and info.State.StorageMethod) or "")
+
+                            if category == "Blox Fruit" or idType == "PhysicalMoveset" or storageMethod == "StoredFruits" then
+                                local cName = cleanFruitName(displayName)
+                                local key = cName:lower()
+                                if fruitMap[key] then
+                                    fruitMap[key].count = fruitMap[key].count + v.Value
+                                else
+                                    fruitMap[key] = { name = cName, count = v.Value }
+                                    table.insert(fruits, fruitMap[key])
+                                end
+                            elseif category == "Sword" or (idType == "Weapon" and (rawName:find("Sword") or displayName:find("Katana") or displayName:find("Saber") or displayName:find("Blade") or displayName:find("Trident") or displayName:find("Tushita") or displayName:find("Yama"))) then
+                                table.insert(swords, { name = displayName, count = v.Value })
+                            elseif category == "Gun" or (idType == "Weapon" and (rawName:find("Gun") or displayName:find("Guitar") or displayName:find("Rifle") or displayName:find("Bow") or displayName:find("Kabucha") or displayName:find("Flintlock") or displayName:find("Bazooka") or displayName:find("Revolver"))) then
+                                table.insert(guns, { name = displayName, count = v.Value })
+                            elseif category == "Accessory" or category == "Wearable" or storageMethod == "WearablesUnlocked" then
+                                table.insert(accessories, { name = displayName, count = v.Value })
+                            elseif category == "Material" or idType == "Material" or storageMethod == "Materials" then
+                                table.insert(materials, { name = displayName, count = v.Value })
+                            end
+                        end
+                    end)
+                end
+            end
+        end
+    end)
+    return fruits, swords, guns, materials, accessories
+end
+
+local function hF(arr, name)
+    local tg = name:lower()
+    for _, i in ipairs(arr) do
+        local id = (i.name or ""):lower()
+        if id == tg or id:find(tg, 1, true) then return true end
     end
     return false
 end
@@ -118,8 +169,9 @@ local function hT(n)
 end
 
 local function cStats()
-    local inv = gInv()
+    local fruits, swords, guns, materials, accessories = gInvAdvanced()
     local mel = gMelee()
+    
     return {
         roblox_username = lplr.Name,
         roblox_user_id = lplr.UserId,
@@ -131,38 +183,38 @@ local function cStats()
         race_ver = gRaceV(),
         tier = gTier(),
         melee = mel,
-        godhuman = mel == "godhuman",
+        godhuman = mel == "godhuman" or mel == "god human",
         sanguine_art = mel == "sanguine art",
-        cursed_dual_katana = hF(inv, "Cursed Dual Katana") or hT("Cursed Dual Katana"),
-        true_triple_katana = hF(inv, "True Triple Katana") or hT("True Triple Katana"),
-        shark_anchor = hF(inv, "Shark Anchor") or hT("Shark Anchor"),
-        dark_blade = hF(inv, "Dark Blade") or hT("Dark Blade"),
-        hallow_scythe = hF(inv, "Hallow Scythe") or hT("Hallow Scythe"),
-        fox_lamp = hF(inv, "Fox Lamp") or hT("Fox Lamp"),
-        yama = hF(inv, "Yama") or hT("Yama"),
-        tushita = hF(inv, "Tushita") or hT("Tushita"),
-        saddi = hF(inv, "Saddi") or hT("Saddi"),
-        wando = hF(inv, "Wando") or hT("Wando"),
-        shisui = hF(inv, "Shisui") or hT("Shisui"),
-        saber = hF(inv, "Saber") or hT("Saber"),
-        soul_guitar = hF(inv, "Soul Guitar") or hT("Soul Guitar"),
-        kabucha = hF(inv, "Kabucha") or hT("Kabucha"),
-        acidum_rifle = hF(inv, "Acidum Rifle") or hT("Acidum Rifle"),
-        fruit_kitsune = hF(inv, "Kitsune-Kitsune") or hF(inv, "Kitsune"),
-        fruit_dragon = hF(inv, "Dragon-Dragon") or hF(inv, "Dragon"),
-        fruit_tiger = hF(inv, "Tiger-Tiger") or hF(inv, "Tiger") or hF(inv, "Leopard"),
-        fruit_yeti = hF(inv, "Yeti-Yeti") or hF(inv, "Yeti"),
-        fruit_dough = hF(inv, "Dough-Dough") or hF(inv, "Dough"),
-        fruit_portal = hF(inv, "Portal-Portal") or hF(inv, "Portal"),
-        fruit_buddha = hF(inv, "Buddha-Buddha") or hF(inv, "Buddha"),
-        fruit_trex = hF(inv, "T-Rex-T-Rex") or hF(inv, "T-Rex"),
-        fruit_mammoth = hF(inv, "Mammoth-Mammoth") or hF(inv, "Mammoth"),
-        fruit_gas = hF(inv, "Gas-Gas") or hF(inv, "Gas"),
-        fruit_spirit = hF(inv, "Spirit-Spirit") or hF(inv, "Spirit"),
-        fruit_venom = hF(inv, "Venom-Venom") or hF(inv, "Venom"),
-        fruit_control = hF(inv, "Control-Control") or hF(inv, "Control"),
-        fruit_blizzard = hF(inv, "Blizzard-Blizzard") or hF(inv, "Blizzard"),
-        fruit_lightning = hF(inv, "Lightning-Lightning") or hF(inv, "Lightning")
+        cursed_dual_katana = hF(swords, "Cursed Dual Katana") or hT("Cursed Dual Katana"),
+        true_triple_katana = hF(swords, "True Triple Katana") or hT("True Triple Katana"),
+        shark_anchor = hF(swords, "Shark Anchor") or hT("Shark Anchor"),
+        dark_blade = hF(swords, "Dark Blade") or hT("Dark Blade"),
+        hallow_scythe = hF(swords, "Hallow Scythe") or hT("Hallow Scythe"),
+        fox_lamp = hF(swords, "Fox Lamp") or hT("Fox Lamp"),
+        yama = hF(swords, "Yama") or hT("Yama"),
+        tushita = hF(swords, "Tushita") or hT("Tushita"),
+        saddi = hF(swords, "Saddi") or hT("Saddi"),
+        wando = hF(swords, "Wando") or hT("Wando"),
+        shisui = hF(swords, "Shisui") or hT("Shisui"),
+        saber = hF(swords, "Saber") or hT("Saber"),
+        soul_guitar = hF(guns, "Soul Guitar") or hT("Soul Guitar"),
+        kabucha = hF(guns, "Kabucha") or hT("Kabucha"),
+        acidum_rifle = hF(guns, "Acidum Rifle") or hT("Acidum Rifle"),
+        fruit_kitsune = hF(fruits, "Kitsune"),
+        fruit_dragon = hF(fruits, "Dragon"),
+        fruit_tiger = hF(fruits, "Tiger") or hF(fruits, "Leopard"),
+        fruit_yeti = hF(fruits, "Yeti"),
+        fruit_dough = hF(fruits, "Dough"),
+        fruit_portal = hF(fruits, "Portal"),
+        fruit_buddha = hF(fruits, "Buddha"),
+        fruit_trex = hF(fruits, "T-Rex"),
+        fruit_mammoth = hF(fruits, "Mammoth"),
+        fruit_gas = hF(fruits, "Gas"),
+        fruit_spirit = hF(fruits, "Spirit"),
+        fruit_venom = hF(fruits, "Venom"),
+        fruit_control = hF(fruits, "Control"),
+        fruit_blizzard = hF(fruits, "Blizzard"),
+        fruit_lightning = hF(fruits, "Lightning")
     }
 end
 
