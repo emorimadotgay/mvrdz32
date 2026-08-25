@@ -126,7 +126,7 @@ local function fullGardenScan()
                 elseif isSheckleName(name) then
                     local sh = parseFlowerString(valStr)
                     if sh > 0 then sheckles = sh; shecklesSource = "leaderstats." .. name end
-                elseif string.find(valStr, "🌸", 1, true) then
+                elseif string.find(valStr, "\240\159\140\184", 1, true) then
                     local sh, lvl = parseFlowerString(valStr)
                     if sh and sh > 0 then sheckles = sh; shecklesSource = "leaderstats." .. name end
                     if lvl and lvl > 0 then gardenLevel = lvl end
@@ -176,7 +176,7 @@ local function fullGardenScan()
                             end
 
                             if sheckles == 0 and not isLevelName(lowerName) and not isLevelName(lowerText) then
-                                if string.find(txt, "🌸", 1, true) or string.find(txt, "$", 1, true) or string.find(lowerText, "sheckle", 1, true) or string.find(lowerName, "sheckle", 1, true) then
+                                if string.find(txt, "\240\159\140\184", 1, true) or string.find(txt, "$", 1, true) or string.find(lowerText, "sheckle", 1, true) or string.find(lowerName, "sheckle", 1, true) then
                                     table.insert(debugLog, "PlayerGui." .. desc.Name .. " = " .. txt)
                                     local sh = cleanNumber(txt)
                                     if sh > sheckles then sheckles = sh; shecklesSource = "PlayerGui." .. desc.Name end
@@ -191,18 +191,29 @@ local function fullGardenScan()
 
     local serverWeather = "Clear Sky"
     pcall(function()
-        for _, child in ipairs(workspace:GetChildren()) do
-            local cName = safeLower(child.Name)
-            for _, wName in ipairs(knownWeathers) do
-                if string.find(cName, safeLower(wName), 1, true) then
-                    serverWeather = wName
+        local attrWeather = workspace:GetAttribute("Weather") or workspace:GetAttribute("CurrentWeather") or Lighting:GetAttribute("Weather") or Lighting:GetAttribute("CurrentWeather")
+        if attrWeather then
+            serverWeather = safeString(attrWeather)
+        end
+
+        if serverWeather == "Clear Sky" then
+            for _, obj in ipairs({ReplicatedStorage, workspace, Lighting}) do
+                local wObj = obj:FindFirstChild("Weather") or obj:FindFirstChild("CurrentWeather") or obj:FindFirstChild("Environment")
+                if wObj then
+                    if wObj:IsA("StringValue") then
+                        serverWeather = safeString(wObj.Value)
+                    elseif wObj:FindFirstChild("Current") then
+                        serverWeather = safeString(wObj.Current.Value)
+                    else
+                        serverWeather = safeString(wObj.Name)
+                    end
                     break
                 end
             end
         end
 
         if serverWeather == "Clear Sky" then
-            for _, child in ipairs(Lighting:GetChildren()) do
+            for _, child in ipairs(workspace:GetChildren()) do
                 local cName = safeLower(child.Name)
                 for _, wName in ipairs(knownWeathers) do
                     if string.find(cName, safeLower(wName), 1, true) then
@@ -244,6 +255,7 @@ local function fullGardenScan()
         end
     end
 
+    -- Strictly scan actual inventory, character, and data folders (EXCLUDE GUI to avoid false positives)
     pcall(function()
         if LocalPlayer:FindFirstChild("Backpack") then
             for _, item in ipairs(LocalPlayer.Backpack:GetChildren()) do checkAndAddPet(item.Name) end
@@ -251,24 +263,20 @@ local function fullGardenScan()
         if LocalPlayer.Character then
             for _, item in ipairs(LocalPlayer.Character:GetChildren()) do checkAndAddPet(item.Name) end
         end
-        if pgui then
-            for _, gui in ipairs(pgui:GetChildren()) do
-                if gui:IsA("ScreenGui") and gui.Enabled then
-                    for _, desc in ipairs(gui:GetDescendants()) do
-                        if desc:IsA("TextLabel") then
-                            checkAndAddPet(desc.Name)
-                            checkAndAddPet(desc.Text)
-                        elseif desc:IsA("ImageLabel") then
-                            checkAndAddPet(desc.Name)
-                        end
-                    end
-                end
-            end
-        end
         for _, fName in ipairs({"Data", "PlayerData", "Inventory", "Pets", "Stats"}) do
             local f = LocalPlayer:FindFirstChild(fName)
             if f then
                 for _, c in ipairs(f:GetDescendants()) do
+                    checkAndAddPet(c.Name)
+                    if c:IsA("ValueBase") then checkAndAddPet(safeString(c.Value)) end
+                end
+            end
+        end
+        local repData = ReplicatedStorage:FindFirstChild("PlayerData") or ReplicatedStorage:FindFirstChild("Data")
+        if repData then
+            local pFolder = repData:FindFirstChild(LocalPlayer.Name) or repData:FindFirstChild(safeString(LocalPlayer.UserId))
+            if pFolder then
+                for _, c in ipairs(pFolder:GetDescendants()) do
                     checkAndAddPet(c.Name)
                     if c:IsA("ValueBase") then checkAndAddPet(safeString(c.Value)) end
                 end
@@ -366,6 +374,6 @@ end
 task.spawn(function()
     while true do
         task.spawn(sendTelemetry)
-        task.wait(10)
+        task.wait(15)
     end
 end)
