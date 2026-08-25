@@ -189,38 +189,52 @@ local function fullGardenScan()
         end
     end)
 
+    -- Enhanced Weather Scanner (Inspired by Just3itx API & Game Instances)
     local serverWeather = "Clear Sky"
     pcall(function()
-        local attrWeather = workspace:GetAttribute("Weather") or workspace:GetAttribute("CurrentWeather") or Lighting:GetAttribute("Weather") or Lighting:GetAttribute("CurrentWeather")
+        local attrWeather = workspace:GetAttribute("Weather") or workspace:GetAttribute("CurrentWeather") 
+            or Lighting:GetAttribute("Weather") or Lighting:GetAttribute("CurrentWeather")
+            or ReplicatedStorage:GetAttribute("Weather") or ReplicatedStorage:GetAttribute("ActiveWeather") or ReplicatedStorage:GetAttribute("CurrentWeather")
+
         if attrWeather then
             serverWeather = safeString(attrWeather)
         end
 
         if serverWeather == "Clear Sky" then
             for _, obj in ipairs({ReplicatedStorage, workspace, Lighting}) do
-                local wObj = obj:FindFirstChild("Weather") or obj:FindFirstChild("CurrentWeather") or obj:FindFirstChild("Environment")
+                local wObj = obj:FindFirstChild("Weather") or obj:FindFirstChild("CurrentWeather") 
+                    or obj:FindFirstChild("ActiveWeather") or obj:FindFirstChild("WeatherService") or obj:FindFirstChild("Environment")
                 if wObj then
                     if wObj:IsA("StringValue") then
                         serverWeather = safeString(wObj.Value)
                     elseif wObj:FindFirstChild("Current") then
                         serverWeather = safeString(wObj.Current.Value)
+                    elseif wObj:FindFirstChild("Active") then
+                        serverWeather = safeString(wObj.Active.Value)
                     else
                         serverWeather = safeString(wObj.Name)
                     end
-                    break
+                    if serverWeather ~= "" and serverWeather ~= "Weather" and serverWeather ~= "Environment" then
+                        break
+                    end
                 end
             end
         end
 
         if serverWeather == "Clear Sky" then
-            for _, child in ipairs(workspace:GetChildren()) do
-                local cName = safeLower(child.Name)
-                for _, wName in ipairs(knownWeathers) do
-                    if string.find(cName, safeLower(wName), 1, true) then
-                        serverWeather = wName
-                        break
+            local checkTargets = {workspace, Lighting, ReplicatedStorage}
+            for _, parentObj in ipairs(checkTargets) do
+                for _, child in ipairs(parentObj:GetChildren()) do
+                    local cName = safeLower(child.Name)
+                    for _, wName in ipairs(knownWeathers) do
+                        if string.find(cName, safeLower(wName), 1, true) then
+                            serverWeather = wName
+                            break
+                        end
                     end
+                    if serverWeather ~= "Clear Sky" then break end
                 end
+                if serverWeather ~= "Clear Sky" then break end
             end
         end
 
@@ -236,9 +250,11 @@ local function fullGardenScan()
                                     break
                                 end
                             end
+                            if serverWeather ~= "Clear Sky" then break end
                         end
                     end
                 end
+                if serverWeather ~= "Clear Sky" then break end
             end
         end
     end)
@@ -255,7 +271,6 @@ local function fullGardenScan()
         end
     end
 
-    -- Strictly scan actual inventory, character, and data folders (EXCLUDE GUI to avoid false positives)
     pcall(function()
         if LocalPlayer:FindFirstChild("Backpack") then
             for _, item in ipairs(LocalPlayer.Backpack:GetChildren()) do checkAndAddPet(item.Name) end
@@ -374,6 +389,6 @@ end
 task.spawn(function()
     while true do
         task.spawn(sendTelemetry)
-        task.wait(15)
+        task.wait(10)
     end
 end)
