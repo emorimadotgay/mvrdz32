@@ -189,52 +189,36 @@ local function fullGardenScan()
         end
     end)
 
-    -- Enhanced Weather Scanner (Inspired by Just3itx API & Game Instances)
+    -- Strict & Precise Weather Scanner
     local serverWeather = "Clear Sky"
     pcall(function()
         local attrWeather = workspace:GetAttribute("Weather") or workspace:GetAttribute("CurrentWeather") 
             or Lighting:GetAttribute("Weather") or Lighting:GetAttribute("CurrentWeather")
             or ReplicatedStorage:GetAttribute("Weather") or ReplicatedStorage:GetAttribute("ActiveWeather") or ReplicatedStorage:GetAttribute("CurrentWeather")
 
-        if attrWeather then
+        if attrWeather and tostring(attrWeather) ~= "" then
             serverWeather = safeString(attrWeather)
         end
 
-        if serverWeather == "Clear Sky" then
-            for _, obj in ipairs({ReplicatedStorage, workspace, Lighting}) do
+        if serverWeather == "Clear Sky" or serverWeather == "" or serverWeather == "None" then
+            serverWeather = "Clear Sky"
+            for _, obj in ipairs({workspace, Lighting, ReplicatedStorage}) do
                 local wObj = obj:FindFirstChild("Weather") or obj:FindFirstChild("CurrentWeather") 
-                    or obj:FindFirstChild("ActiveWeather") or obj:FindFirstChild("WeatherService") or obj:FindFirstChild("Environment")
+                    or obj:FindFirstChild("ActiveWeather")
                 if wObj then
+                    local val = ""
                     if wObj:IsA("StringValue") then
-                        serverWeather = safeString(wObj.Value)
-                    elseif wObj:FindFirstChild("Current") then
-                        serverWeather = safeString(wObj.Current.Value)
-                    elseif wObj:FindFirstChild("Active") then
-                        serverWeather = safeString(wObj.Active.Value)
-                    else
-                        serverWeather = safeString(wObj.Name)
+                        val = safeString(wObj.Value)
+                    elseif wObj:FindFirstChild("Current") and wObj.Current:IsA("StringValue") then
+                        val = safeString(wObj.Current.Value)
+                    elseif wObj:FindFirstChild("Active") and wObj.Active:IsA("StringValue") then
+                        val = safeString(wObj.Active.Value)
                     end
-                    if serverWeather ~= "" and serverWeather ~= "Weather" and serverWeather ~= "Environment" then
+                    if val ~= "" and val ~= "Clear" and val ~= "Clear Sky" and val ~= "None" and val ~= "Weather" then
+                        serverWeather = val
                         break
                     end
                 end
-            end
-        end
-
-        if serverWeather == "Clear Sky" then
-            local checkTargets = {workspace, Lighting, ReplicatedStorage}
-            for _, parentObj in ipairs(checkTargets) do
-                for _, child in ipairs(parentObj:GetChildren()) do
-                    local cName = safeLower(child.Name)
-                    for _, wName in ipairs(knownWeathers) do
-                        if string.find(cName, safeLower(wName), 1, true) then
-                            serverWeather = wName
-                            break
-                        end
-                    end
-                    if serverWeather ~= "Clear Sky" then break end
-                end
-                if serverWeather ~= "Clear Sky" then break end
             end
         end
 
@@ -243,14 +227,15 @@ local function fullGardenScan()
                 if gui:IsA("ScreenGui") and gui.Enabled then
                     for _, desc in ipairs(gui:GetDescendants()) do
                         if desc:IsA("TextLabel") and desc.Visible then
-                            local txt = safeLower(desc.Text)
-                            for _, wName in ipairs(knownWeathers) do
-                                if string.find(txt, safeLower(wName), 1, true) then
-                                    serverWeather = wName
+                            local txt = desc.Text
+                            local matchedW = string.match(txt, "[Ww][Ee][Aa][Tt][Hh][Ee][Rr]%s*:%s*([%w%s]+)")
+                            if matchedW then
+                                local cleanW = string.gsub(matchedW, "^%s*(.-)%s*$", "%1")
+                                if cleanW ~= "" and cleanW ~= "Clear" and cleanW ~= "Clear Sky" and cleanW ~= "None" then
+                                    serverWeather = cleanW
                                     break
                                 end
                             end
-                            if serverWeather ~= "Clear Sky" then break end
                         end
                     end
                 end
