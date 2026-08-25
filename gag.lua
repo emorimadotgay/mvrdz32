@@ -6,205 +6,123 @@ local secretKey = getgenv().TRACKSTATS_KEY or getgenv().EMORIMA_KEY or getgenv()
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
 local API_URL = "https://qnguyen36.vercel.app/api/api_grow_garden"
 
 local function request_http(req)
-    if syn and syn.request then
-        return syn.request(req)
-    elseif http and http.request then
-        return http.request(req)
-    elseif http_request then
-        return http_request(req)
-    elseif fluxus and fluxus.request then
-        return fluxus.request(req)
-    elseif request then
-        return request(req)
-    end
+    if syn and syn.request then return syn.request(req)
+    elseif http and http.request then return http.request(req)
+    elseif http_request then return http_request(req)
+    elseif fluxus and fluxus.request then return fluxus.request(req)
+    elseif request then return request(req) end
     return nil
 end
 
-local function safeGetLeaderstat(names, defaultVal)
-    local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
-    if leaderstats then
-        for _, n in ipairs(names) do
-            local stat = leaderstats:FindFirstChild(n)
-            if stat then return tonumber(stat.Value) or defaultVal end
+local function cleanNumber(val)
+    if type(val) == "number" then return val end
+    if type(val) == "string" then
+        local s = string.gsub(val, "[%$,%s]", "")
+        local numStr, mult = string.match(s, "([%d%.]+)([KkMmBb]?)")
+        if numStr then
+            local n = tonumber(numStr) or 0
+            if mult == "K" or mult == "k" then return n * 1000 end
+            if mult == "M" or mult == "m" then return n * 1000000 end
+            if mult == "B" or mult == "b" then return n * 1000000000 end
+            return n
         end
     end
-    return defaultVal
+    return 0
 end
 
-local function getGardenData()
-    -- Read Money / Sheckles
-    local sheckles = safeGetLeaderstat({"Sheckles", "Money", "Coins", "Cash"}, 0)
-
-    -- Read Level & Rebirths
-    local gardenLevel = safeGetLeaderstat({"Level", "GardenLevel", "LVL"}, 1)
-    local rebirths = safeGetLeaderstat({"Rebirths", "Rebirth"}, 0)
-
-    -- Collect Pets, Seeds, Fruits, Tools, Sprinklers
-    local petsList = {}
-    local cropsList = {}
-    local seedsList = {}
-    local toolsList = {}
-    local sprinklersList = {}
-    local mutationsList = {}
-
-    local playerData = LocalPlayer:FindFirstChild("Data") or LocalPlayer:FindFirstChild("Inventory") or LocalPlayer:FindFirstChild("PlayerData")
-    if playerData then
-        -- Pets
-        local pets = playerData:FindFirstChild("Pets")
-        if pets then
-            for _, p in ipairs(pets:GetChildren()) do
-                table.insert(petsList, p.Name)
+local function detectSheckles()
+    local targetNames = {"Sheckles", "Sheckle", "Money", "Coins", "Cash", "Balance", "Gold"}
+    
+    local leaderstats = LocalPlayer:FindFirstChild("leaderstats")
+    if leaderstats then
+        for _, name in ipairs(targetNames) do
+            local stat = leaderstats:FindFirstChild(name)
+            if stat then
+                local num = cleanNumber(stat.Value)
+                if num > 0 then return num, "leaderstats." .. name end
             end
         end
+    end
 
-        -- Seeds / Crops
-        local crops = playerData:FindFirstChild("Crops") or playerData:FindFirstChild("Seeds") or playerData:FindFirstChild("Items")
-        if crops then
-            for _, c in ipairs(crops:GetChildren()) do
-                table.insert(cropsList, c.Name)
-            end
+    for _, name in ipairs(targetNames) do
+        local child = LocalPlayer:FindFirstChild(name)
+        if child then
+            local num = cleanNumber(child.Value)
+            if num > 0 then return num, "LocalPlayer." .. name end
         end
+    end
 
-        -- Tools / Sprinklers
-        local tools = playerData:FindFirstChild("Tools") or playerData:FindFirstChild("Structures")
-        if tools then
-            for _, t in ipairs(tools:GetChildren()) do
-                if string.find(string.lower(t.Name), "sprinkler") then
-                    table.insert(sprinklersList, t.Name)
-                else
-                    table.insert(toolsList, t.Name)
+    for _, folderName in ipairs({"Data", "PlayerData", "Inventory", "Stats"}) do
+        local folder = LocalPlayer:FindFirstChild(folderName)
+        if folder then
+            for _, name in ipairs(targetNames) do
+                local child = folder:FindFirstChild(name)
+                if child then
+                    local num = cleanNumber(child.Value)
+                    if num > 0 then return num, "LocalPlayer." .. folderName .. "." .. name end
                 end
             end
         end
     end
 
-    -- Check Backpack
-    local backpack = LocalPlayer:FindFirstChild("Backpack")
-    if backpack then
-        for _, item in ipairs(backpack:GetChildren()) do
-            if string.find(string.lower(item.Name), "sprinkler") then
-                if not table.find(sprinklersList, item.Name) then
-                    table.insert(sprinklersList, item.Name)
+    local pgui = LocalPlayer:FindFirstChild("PlayerGui")
+    if pgui then
+        for _, gui in ipairs(pgui:GetChildren()) do
+            if gui:IsA("ScreenGui") and gui.Enabled then
+                for _, desc in ipairs(gui:GetDescendants()) do
+                    if desc:IsA("TextLabel") and desc.Visible then
+                        local txt = desc.Text or ""
+                        if string.find(txt, "%$") or string.find(string.lower(txt), "sheckle") then
+                            local num = cleanNumber(txt)
+                            if num > 0 then return num, "PlayerGui." .. desc.Name end
+                        end
+                    end
                 end
-            elseif not table.find(toolsList, item.Name) then
-                table.insert(toolsList, item.Name)
             end
         end
     end
 
-    -- Server Weather Detection
-    local serverWeather = "Clear Sky"
-    local weatherFolder = workspace:FindFirstChild("Weather") or workspace:FindFirstChild("Environment") or Lighting:FindFirstChild("Weather") or workspace:FindFirstChild("CurrentWeather")
-    if weatherFolder then
-        if weatherFolder:IsA("StringValue") then
-            serverWeather = weatherFolder.Value
-        elseif weatherFolder:FindFirstChild("Current") then
-            serverWeather = tostring(weatherFolder.Current.Value)
-        else
-            serverWeather = weatherFolder.Name
-        end
-    end
+    return 0, "Default (0)"
+end
 
-    -- Unlocked Plots Count
-    local plotsCount = 4
-    local plotsFolder = workspace:FindFirstChild("Plots") or workspace:FindFirstChild("GardenPlots") or workspace:FindFirstChild("Farms")
-    if plotsFolder then
-        local userPlots = 0
-        for _, pl in ipairs(plotsFolder:GetChildren()) do
-            local owner = pl:FindFirstChild("Owner") or pl:FindFirstChild("Player")
-            if owner and (owner.Value == LocalPlayer or tostring(owner.Value) == LocalPlayer.Name) then
-                userPlots = userPlots + 1
-            end
-        end
-        if userPlots > 0 then
-            plotsCount = userPlots
-        end
-    end
-
-    -- Boolean Quick Flags for Vault Summary
-    local hasAether = false
-    local hasDragon = false
-    local hasPeach = false
-    local hasTrinity = false
-    local hasCelestiberry = false
-    local hasDiscoBee = false
-    local hasGoose = false
-    local hasRainbowSeed = false
-
-    for _, c in ipairs(cropsList) do
-        local lc = string.lower(c)
-        if string.find(lc, "aether") then hasAether = true end
-        if string.find(lc, "dragon") then hasDragon = true end
-        if string.find(lc, "peach") then hasPeach = true end
-        if string.find(lc, "trinity") then hasTrinity = true end
-        if string.find(lc, "celesti") then hasCelestiberry = true end
-        if string.find(lc, "rainbow") then hasRainbowSeed = true end
-    end
-
-    for _, p in ipairs(petsList) do
-        local lp = string.lower(p)
-        if string.find(lp, "disco") then hasDiscoBee = true end
-        if string.find(lp, "goose") then hasGoose = true end
-    end
-
-    return {
+local function sendTelemetry()
+    local sheckles, shecklesSource = detectSheckles()
+    local payload = {
         secret_key = secretKey,
         stats = {
             roblox_username = LocalPlayer.Name,
             roblox_user_id = LocalPlayer.UserId,
             sheckles = sheckles,
-            garden_level = gardenLevel,
-            rebirths = rebirths,
-            unlocked_plots = plotsCount,
-            weather = serverWeather,
-            pets = petsList,
-            crops = cropsList,
-            seeds = seedsList,
-            tools = toolsList,
-            sprinklers = sprinklersList,
-            mutations = mutationsList,
-            has_aetherfruit = hasAether,
-            has_dragon_fruit = hasDragon,
-            has_golden_peach = hasPeach,
-            has_trinity_fruit = hasTrinity,
-            has_celestiberry = hasCelestiberry,
-            has_disco_bee = hasDiscoBee,
-            has_golden_goose = hasGoose,
-            has_rainbow_seed = hasRainbowSeed,
+            sheckles_source = shecklesSource,
+            garden_level = 1,
+            weather = "Clear Sky"
         }
     }
-end
-
-local function sendTelemetry()
-    local payload = getGardenData()
-    local jsonStr = HttpService:JSONEncode(payload)
 
     local res = request_http({
         Url = API_URL,
         Method = "POST",
-        Headers = {
-            ["Content-Type"] = "application/json"
-        },
-        Body = jsonStr
+        Headers = { ["Content-Type"] = "application/json" },
+        Body = HttpService:JSONEncode(payload)
     })
 
     if res and (res.StatusCode == 200 or res.StatusDescription == "OK") then
-        print("[Emorima Sync] Grow a Garden telemetry synced! Sheckles: $" .. tostring(payload.stats.sheckles))
+        print("[Emorima Sync] Success! Sheckles: $" .. tostring(sheckles) .. " (From: " .. tostring(shecklesSource) .. ") | Key: " .. tostring(secretKey))
     else
-        warn("[Emorima Sync] Telemetry send failed:", res and res.StatusCode or "No Response")
+        warn("[Emorima Sync] Failed! Response:", res and res.StatusCode or "No Response")
     end
 end
 
--- Run immediate & Loop every 15 seconds
 task.spawn(function()
-    print("Key: " .. tostring(secretKey))
+    print("🌿 EMORIMA GROW A GARDEN TRACKER LOADED 🌿")
     while true do
         pcall(sendTelemetry)
-        task.wait(15)
+        task.wait(10)
     end
 end)
